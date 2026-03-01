@@ -1,6 +1,8 @@
 # Drafter — Agent Guide
 
-A Rust/OpenGL learning project following the [learn-opengl](https://rust-tutorials.github.io/learn-opengl/) tutorial series, adapted for the versions of beryllium and ogl33 actually available on crates.io.
+A Rust/OpenGL STEP file viewer. Parses AP214 `.stp` files, tessellates
+B-rep edge geometry, and displays a static wireframe front elevation in
+an SDL2/OpenGL 3.3 window.
 
 ## Stack
 
@@ -16,9 +18,50 @@ A Rust/OpenGL learning project following the [learn-opengl](https://rust-tutoria
 
 ```
 src/
-  main.rs       — entry point, SDL init, window, event loop, render
-  gl_utils.rs   — thin safe wrappers over raw ogl33 calls
+  main.rs          — SDL init, window, GL loop; loads STEP file and renders
+  gl_utils.rs      — thin safe wrappers over raw ogl33 calls
+  step_parser.rs   — AP214 STEP entity parser → HashMap<u32, Entity>
+  step_geometry.rs — walks entity graph → flat Vec<[f32;3]> of GL_LINES vertices
+.data/
+  as1-ac-214.stp   — NIST AS1 assembly sample (AutoCAD 2000 export)
+  io1-ug-214.stp   — single-part sample (Unigraphics export)
 ```
+
+The active file is set by `STEP_FILE` in `main.rs`.
+
+## STEP parser (`step_parser.rs`)
+
+Parses a subset of AP214 entity types into `HashMap<u32, Entity>`.
+
+**Handled entity types:** `CARTESIAN_POINT`, `DIRECTION`, `VECTOR`,
+`AXIS2_PLACEMENT_3D`, `VERTEX_POINT`, `LINE`, `CIRCLE`, `EDGE_CURVE`,
+`ORIENTED_EDGE`, `EDGE_LOOP`, `FACE_OUTER_BOUND`, `FACE_BOUND`,
+`ADVANCED_FACE`, `CLOSED_SHELL`, `MANIFOLD_SOLID_BREP`,
+`ITEM_DEFINED_TRANSFORMATION`.
+
+**Format notes:**
+- Entities can span multiple lines (Unigraphics style); the parser
+  buffers lines until it sees a `;` terminator.
+- Floats may have no trailing zero: `18.` is valid.
+- Compound entities `#N=(TYPE1(...)TYPE2(...))` are skipped.
+
+## Geometry extraction (`step_geometry.rs`)
+
+`extract_segments(entities)` iterates all `EdgeCurve` entities and
+returns a flat `Vec<[f32; 3]>` where every consecutive pair is one
+`GL_LINES` segment. No assembly transforms are applied; geometry is
+rendered in file-local coordinates.
+
+- **LINE** edges → one segment (start vertex, end vertex)
+- **CIRCLE** edges → 32 tessellated segments; arc direction is CCW;
+  full circles detected when `start_id == end_id`
+- Unknown curve types → chord fallback
+
+## Rendering (`main.rs`)
+
+`project_elevation` drops Y and maps XZ to NDC `[-0.9, 0.9]` (front
+elevation view). Geometry is uploaded once at startup; the render loop
+just calls `glDrawArrays(GL_LINES, ...)` with no uniforms.
 
 ### gl_utils.rs exports
 
@@ -65,6 +108,7 @@ let ndc_y = 1.0 - (mouse_y / WIN_H) * 2.0;
 
 ```sh
 cargo run
+cargo test
 ```
 
 ## Skills
