@@ -1,5 +1,8 @@
 mod gl_utils;
-use gl_utils::{buffer_data, clear_color, Buffer, BufferType, ShaderProgram, VertexArray};
+use gl_utils::{
+    buffer_data, clear_color, polygon_mode, Buffer, BufferType, PolygonMode,
+    ShaderProgram, VertexArray,
+};
 
 use beryllium::{
     ContextFlag, Event, GlProfile, InitFlags, SdlGlAttr, SwapInterval, WindowFlags,
@@ -9,9 +12,12 @@ use core::mem::size_of;
 use ogl33::*;
 
 type Vertex = [f32; 3];
+type TriIndexes = [u32; 3];
 
-const VERTICES: [Vertex; 3] =
-    [[-0.5, -0.5, 0.0], [0.5, -0.5, 0.0], [0.0, 0.5, 0.0]];
+const VERTICES: [Vertex; 4] =
+    [[0.5, 0.5, 0.0], [0.5, -0.5, 0.0], [-0.5, -0.5, 0.0], [-0.5, 0.5, 0.0]];
+
+const INDICES: [TriIndexes; 2] = [[0, 1, 3], [1, 2, 3]];
 
 const VERT_SHADER: &str = r#"#version 330 core
   layout (location = 0) in vec3 pos;
@@ -44,7 +50,7 @@ fn main() {
     sdl.gl_set_attribute(SdlGlAttr::Flags, flags).unwrap();
 
     let win = sdl
-        .create_gl_window("Triangle", WindowPosition::Centered, 800, 600, WindowFlags::Shown)
+        .create_gl_window("Rectangle", WindowPosition::Centered, 800, 600, WindowFlags::Shown)
         .expect("couldn't make a window and context");
 
     win.set_swap_interval(SwapInterval::Vsync);
@@ -56,9 +62,13 @@ fn main() {
     let vao = VertexArray::new().expect("Couldn't make a VAO");
     vao.bind();
 
-    let vbo = Buffer::new().expect("Couldn't make a VBO");
+    let vbo = Buffer::new().expect("Couldn't make the vertex buffer");
     vbo.bind(BufferType::Array);
     buffer_data(BufferType::Array, bytemuck::cast_slice(&VERTICES), GL_STATIC_DRAW);
+
+    let ebo = Buffer::new().expect("Couldn't make the element buffer");
+    ebo.bind(BufferType::ElementArray);
+    buffer_data(BufferType::ElementArray, bytemuck::cast_slice(&INDICES), GL_STATIC_DRAW);
 
     unsafe {
         glVertexAttribPointer(
@@ -76,6 +86,8 @@ fn main() {
         ShaderProgram::from_vert_frag(VERT_SHADER, FRAG_SHADER).unwrap();
     shader_program.use_program();
 
+    polygon_mode(PolygonMode::Line);
+
     'main_loop: loop {
         while let Some(event) = sdl.poll_events().and_then(Result::ok) {
             if matches!(event, Event::Quit(_)) {
@@ -85,7 +97,7 @@ fn main() {
 
         unsafe {
             glClear(GL_COLOR_BUFFER_BIT);
-            glDrawArrays(GL_TRIANGLES, 0, 3);
+            glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0 as *const _);
         }
         win.swap_window();
     }

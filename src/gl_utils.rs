@@ -91,6 +91,16 @@ impl Shader {
     }
 }
 
+pub enum PolygonMode {
+    Point = GL_POINT as isize,
+    Line = GL_LINE as isize,
+    Fill = GL_FILL as isize,
+}
+
+pub fn polygon_mode(mode: PolygonMode) {
+    unsafe { glPolygonMode(GL_FRONT_AND_BACK, mode as GLenum) };
+}
+
 pub struct ShaderProgram(pub GLuint);
 impl ShaderProgram {
     pub fn from_vert_frag(vert: &str, frag: &str) -> Result<Self, String> {
