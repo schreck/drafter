@@ -3,5 +3,51 @@
 version = 4
 
 [[package]]
+name = "beryllium"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d6306aa54919177d3aa288314dbcceab70fef2b043c8957b29a99820804a64f8"
+dependencies = [
+ "fermium",
+ "objc",
+]
+
+[[package]]
 name = "drafter"
 version = "0.1.0"
+dependencies = [
+ "beryllium",
+]
+
+[[package]]
+name = "fermium"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e0db7d98893b18bff24e14593a05ff0dccba8cc6ed795dce5623213acffda87d"
+dependencies = [
+ "libc",
+]
+
+[[package]]
+name = "libc"
+version = "0.2.182"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6800badb6cb2082ffd7b6a67e6125bb39f18782f793520caee8cb8846be06112"
+
+[[package]]
+name = "malloc_buf"
+version = "0.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "62bb907fe88d54d8d9ce32a3cceab4218ed2f6b7d35617cafe9adf84e43919cb"
+dependencies = [
+ "libc",
+]
+
+[[package]]
+name = "objc"
+version = "0.2.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "915b1b472bc21c53464d6c8461c9d3af805ba1ef837e1cac254428f4a77177b1"
+dependencies = [
+ "malloc_buf",
+]
