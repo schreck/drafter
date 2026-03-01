@@ -1,7 +1,8 @@
 mod gl_utils;
-use gl_utils::{
-    buffer_data, clear_color, Buffer, BufferType, ShaderProgram, VertexArray,
-};
+mod step_geometry;
+mod step_parser;
+
+use gl_utils::{buffer_data, clear_color, Buffer, BufferType, ShaderProgram, VertexArray};
 
 use beryllium::{
     ContextFlag, Event, GlProfile, InitFlags, SdlGlAttr, SwapInterval, WindowFlags,
@@ -10,31 +11,58 @@ use beryllium::{
 use core::mem::size_of;
 use ogl33::*;
 
-const WIN_W: f32 = 800.0;
-const WIN_H: f32 = 600.0;
+const WIN_W: u32 = 800;
+const WIN_H: u32 = 600;
 
-type Vertex = [f32; 3];
-
-// Small triangle centered at origin; the shader shifts it with a uniform
-const VERTICES: [Vertex; 3] =
-    [[0.0, 0.04, 0.0], [-0.03, -0.04, 0.0], [0.03, -0.04, 0.0]];
+const STEP_FILE: &str = ".data/io1-ug-214.stp";
 
 const VERT_SHADER: &str = r#"#version 330 core
-  layout (location = 0) in vec3 pos;
-  uniform vec2 offset;
+  layout (location = 0) in vec2 pos;
   void main() {
-    gl_Position = vec4(pos.x + offset.x, pos.y + offset.y, pos.z, 1.0);
+    gl_Position = vec4(pos, 0.0, 1.0);
   }
 "#;
 
 const FRAG_SHADER: &str = r#"#version 330 core
-  out vec4 final_color;
+  out vec4 color;
   void main() {
-    final_color = vec4(1.0, 0.5, 0.2, 1.0);
+    color = vec4(0.9, 0.9, 0.9, 1.0);
   }
 "#;
 
+/// Project 3-D segments onto the XZ plane (front elevation, looking along -Y),
+/// then normalise so the geometry fits within NDC [-0.9, 0.9].
+fn project_elevation(segments_3d: &[[f32; 3]]) -> Vec<[f32; 2]> {
+    let mut xmin = f32::MAX;
+    let mut xmax = f32::MIN;
+    let mut zmin = f32::MAX;
+    let mut zmax = f32::MIN;
+
+    for v in segments_3d {
+        xmin = xmin.min(v[0]);
+        xmax = xmax.max(v[0]);
+        zmin = zmin.min(v[2]);
+        zmax = zmax.max(v[2]);
+    }
+
+    let cx = (xmin + xmax) / 2.0;
+    let cz = (zmin + zmax) / 2.0;
+    let span = (xmax - xmin).max(zmax - zmin);
+    let scale = if span > 0.0 { 1.8 / span } else { 1.0 };
+
+    segments_3d.iter().map(|v| [(v[0] - cx) * scale, (v[2] - cz) * scale]).collect()
+}
+
 fn main() {
+    // ── Load and tessellate STEP geometry ────────────────────────────────────
+    let entities = step_parser::parse(STEP_FILE);
+    let segments_3d = step_geometry::extract_segments(&entities);
+    let vertices: Vec<[f32; 2]> = project_elevation(&segments_3d);
+    let vertex_count = vertices.len() as i32;
+
+    println!("Loaded {} line-segment vertices from {STEP_FILE}", vertex_count);
+
+    // ── SDL + OpenGL context ─────────────────────────────────────────────────
     let sdl = SDL::init(InitFlags::Everything).expect("SDL init failed");
 
     sdl.gl_set_attribute(SdlGlAttr::MajorVersion, 3).unwrap();
@@ -51,65 +79,55 @@ fn main() {
     sdl.gl_set_attribute(SdlGlAttr::Flags, flags).unwrap();
 
     let win = sdl
-        .create_gl_window("Mouse Triangle", WindowPosition::Centered, WIN_W as u32, WIN_H as u32, WindowFlags::Shown)
-        .expect("couldn't make a window and context");
+        .create_gl_window(
+            "STEP Viewer — as1-ac-214",
+            WindowPosition::Centered,
+            WIN_W,
+            WIN_H,
+            WindowFlags::Shown,
+        )
+        .expect("couldn't create window");
 
     win.set_swap_interval(SwapInterval::Vsync);
 
     unsafe { load_gl_with(|f_name| win.get_proc_address(f_name.cast())) };
 
-    clear_color(0.2, 0.3, 0.3, 1.0);
+    // ── Upload geometry ───────────────────────────────────────────────────────
+    clear_color(0.1, 0.1, 0.15, 1.0);
 
-    let vao = VertexArray::new().expect("Couldn't make a VAO");
+    let vao = VertexArray::new().expect("Couldn't make VAO");
     vao.bind();
 
-    let vbo = Buffer::new().expect("Couldn't make the vertex buffer");
+    let vbo = Buffer::new().expect("Couldn't make VBO");
     vbo.bind(BufferType::Array);
-    buffer_data(BufferType::Array, bytemuck::cast_slice(&VERTICES), GL_STATIC_DRAW);
+    buffer_data(BufferType::Array, bytemuck::cast_slice(&vertices), GL_STATIC_DRAW);
 
     unsafe {
         glVertexAttribPointer(
             0,
-            3,
+            2,
             GL_FLOAT,
             GL_FALSE,
-            size_of::<Vertex>().try_into().unwrap(),
+            size_of::<[f32; 2]>().try_into().unwrap(),
             0 as *const _,
         );
         glEnableVertexAttribArray(0);
     }
 
-    let shader_program =
-        ShaderProgram::from_vert_frag(VERT_SHADER, FRAG_SHADER).unwrap();
-    shader_program.use_program();
+    let shader = ShaderProgram::from_vert_frag(VERT_SHADER, FRAG_SHADER).unwrap();
+    shader.use_program();
 
-    let offset_location = unsafe {
-        glGetUniformLocation(shader_program.0, b"offset\0".as_ptr().cast())
-    };
-
-    let mut mouse_x: f32 = WIN_W / 2.0;
-    let mut mouse_y: f32 = WIN_H / 2.0;
-
+    // ── Render loop ───────────────────────────────────────────────────────────
     'main_loop: loop {
         while let Some(event) = sdl.poll_events().and_then(Result::ok) {
-            match event {
-                Event::Quit(_) => break 'main_loop,
-                Event::MouseMotion(e) => {
-                    mouse_x = e.x_pos as f32;
-                    mouse_y = e.y_pos as f32;
-                }
-                _ => {}
+            if let Event::Quit(_) = event {
+                break 'main_loop;
             }
         }
 
-        // Convert screen coords to NDC: x in [-1,1], y flipped
-        let ndc_x = (mouse_x / WIN_W) * 2.0 - 1.0;
-        let ndc_y = 1.0 - (mouse_y / WIN_H) * 2.0;
-
         unsafe {
-            glUniform2f(offset_location, ndc_x, ndc_y);
             glClear(GL_COLOR_BUFFER_BIT);
-            glDrawArrays(GL_TRIANGLES, 0, 3);
+            glDrawArrays(GL_LINES, 0, vertex_count);
         }
         win.swap_window();
     }
