@@ -4,4 +4,5 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-beryllium = "0.2.0-alpha.2"
+beryllium = "0.2.1"
+ogl33 = "0.2.0"

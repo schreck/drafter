@@ -17,6 +17,7 @@ name = "drafter"
 version = "0.1.0"
 dependencies = [
  "beryllium",
+ "ogl33",
 ]
 
 [[package]]
@@ -50,4 +51,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "915b1b472bc21c53464d6c8461c9d3af805ba1ef837e1cac254428f4a77177b1"
 dependencies = [
  "malloc_buf",
+]
+
+[[package]]
+name = "ogl33"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "824cf1a81ae16877f90e9cdc4dcb51c833a0f8da6a7ca36a782a3a970fcd3e32"
+dependencies = [
+ "libc",
 ]
