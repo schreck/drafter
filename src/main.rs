@@ -14,8 +14,6 @@ use ogl33::*;
 const WIN_W: u32 = 800;
 const WIN_H: u32 = 600;
 
-const STEP_FILE: &str = ".data/io1-ug-214.stp";
-
 const VERT_SHADER: &str = r#"#version 330 core
   layout (location = 0) in vec2 pos;
   void main() {
@@ -54,13 +52,18 @@ fn project_elevation(segments_3d: &[[f32; 3]]) -> Vec<[f32; 2]> {
 }
 
 fn main() {
+    let step_file = std::env::args().nth(1).unwrap_or_else(|| {
+        eprintln!("Usage: drafter <file.stp>");
+        std::process::exit(1);
+    });
+
     // ── Load and tessellate STEP geometry ────────────────────────────────────
-    let entities = step_parser::parse(STEP_FILE);
+    let entities = step_parser::parse(&step_file);
     let segments_3d = step_geometry::extract_segments(&entities);
     let vertices: Vec<[f32; 2]> = project_elevation(&segments_3d);
     let vertex_count = vertices.len() as i32;
 
-    println!("Loaded {} line-segment vertices from {STEP_FILE}", vertex_count);
+    println!("Loaded {} line-segment vertices from {step_file}", vertex_count);
 
     // ── SDL + OpenGL context ─────────────────────────────────────────────────
     let sdl = SDL::init(InitFlags::Everything).expect("SDL init failed");
@@ -80,7 +83,7 @@ fn main() {
 
     let win = sdl
         .create_gl_window(
-            "STEP Viewer — as1-ac-214",
+            &format!("STEP Viewer — {step_file}"),
             WindowPosition::Centered,
             WIN_W,
             WIN_H,

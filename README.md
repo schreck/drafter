@@ -33,8 +33,15 @@ Download the SDL2 development libraries from https://github.com/libsdl-org/SDL/r
 
 ## Building & Running
 
+Pass the path to an AP214 `.stp` file as the first argument:
+
 ```sh
-cargo run
+cargo run -- path/to/model.stp
 ```
 
 Close the window or press the OS close button to exit.
+
+## Example files
+
+STEP Tools maintains a collection of AP214 sample files at:
+https://www.steptools.com/docs/stpfiles/ap214/index.html
