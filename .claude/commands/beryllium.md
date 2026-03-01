@@ -1,11 +1,13 @@
-You are helping the user work with beryllium windows in this Rust project.
+You are helping the user work with beryllium windows and OpenGL in this Rust project.
 
 ## Project context
 
 - Crate: `beryllium = "0.2.1"` (SDL2 wrapper)
 - Crate: `ogl33 = "0.2.0"` (OpenGL 3.3 bindings)
+- Crate: `bytemuck = "1"` (safe byte casting for vertex data)
 - SDL2 system lib required: `libsdl2-dev` (Linux), `brew install sdl2` (macOS)
 - Entry point: `src/main.rs`
+- GL helper wrappers: `src/gl_utils.rs` (VertexArray, Buffer, BufferType, Shader, ShaderProgram, PolygonMode)
 
 ## Key API facts (beryllium 0.2.1)
 
@@ -22,8 +24,10 @@ sdl.gl_set_attribute(SdlGlAttr::MajorVersion, 3).unwrap();
 sdl.gl_set_attribute(SdlGlAttr::MinorVersion, 3).unwrap();
 sdl.gl_set_attribute(SdlGlAttr::Profile, GlProfile::Core).unwrap();
 // Optional context flags (combine with |):
-// ContextFlag::Debug, ContextFlag::ForwardCompatible
-sdl.gl_set_attribute(SdlGlAttr::Flags, ContextFlag::Debug).unwrap();
+let mut flags = 0_i32;
+if cfg!(target_os = "macos") { flags |= ContextFlag::ForwardCompatible; }
+if cfg!(debug_assertions) { flags |= ContextFlag::Debug; }
+sdl.gl_set_attribute(SdlGlAttr::Flags, flags).unwrap();
 ```
 
 **Window creation**
@@ -37,6 +41,13 @@ let win = sdl
 - `WindowFlags` constants: `Shown`, `OpenGL`, `Vulkan` (combinable with `|`)
 - Only one window is allowed at a time
 
+**GL swap and vsync**
+```rust
+use beryllium::SwapInterval;
+win.set_swap_interval(SwapInterval::Vsync); // returns i32, not Result
+win.swap_window();
+```
+
 **Event loop**
 ```rust
 use beryllium::Event;
@@ -44,8 +55,9 @@ use beryllium::Event;
     while let Some(event) = sdl.poll_events().and_then(Result::ok) {
         match event {
             Event::Quit(_) => break 'main_loop,
-            Event::Keyboard(key) => { /* handle key */ }
-            Event::MouseButton(btn) => { /* handle mouse */ }
+            Event::Keyboard(key) => { /* key.keycode */ }
+            Event::MouseMotion(e) => { /* e.x_pos, e.y_pos, e.x_delta, e.y_delta */ }
+            Event::MouseButton(btn) => { /* btn.button, btn.x_pos, btn.y_pos */ }
             _ => {}
         }
     }
@@ -55,87 +67,111 @@ use beryllium::Event;
 
 **Event variants:** `Quit`, `Window`, `Keyboard`, `MouseMotion`, `MouseButton`, `MouseWheel`, `ControllerDevice`, `ControllerButton`, `ControllerAxis`
 
-**GL swap and vsync**
-```rust
-use beryllium::SwapInterval;
-win.set_swap_interval(SwapInterval::Vsync); // returns i32, not Result
-win.swap_window();
-```
+**MouseMotionEvent fields:** `x_pos: i32`, `y_pos: i32`, `x_delta: i32`, `y_delta: i32`, `mouse_id`, `window_id`, `timestamp`
 
-**Loading OpenGL functions with ogl33**
+---
+
+## Loading OpenGL (ogl33)
+
 ```rust
 use ogl33::*;
-unsafe {
-    load_gl_with(|f_name| win.get_proc_address(f_name.cast()));
-}
+unsafe { load_gl_with(|f_name| win.get_proc_address(f_name.cast())); }
 ```
-Call this once after window creation, before any GL calls.
+Call once after window creation, before any GL calls.
 
-**VAO/VBO setup (ogl33)**
+## gl_utils module (src/gl_utils.rs)
+
+This project has helper wrappers — prefer these over raw ogl33 calls:
+
 ```rust
-unsafe {
-    let mut vao = 0;
-    glGenVertexArrays(1, &mut vao);
-    glBindVertexArray(vao);
-
-    let mut vbo = 0;
-    glGenBuffers(1, &mut vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(
-        GL_ARRAY_BUFFER,
-        size_of_val(&VERTICES) as isize,
-        VERTICES.as_ptr().cast(),
-        GL_STATIC_DRAW,
-    );
-
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE,
-        size_of::<Vertex>().try_into().unwrap(), 0 as *const _);
-    glEnableVertexAttribArray(0);
-}
+use crate::gl_utils::{
+    buffer_data, clear_color, polygon_mode,
+    Buffer, BufferType, PolygonMode, ShaderProgram, VertexArray,
+};
 ```
 
-**Shader compilation (ogl33)**
+**VertexArray** — wraps VAO
 ```rust
-unsafe {
-    let shader = glCreateShader(GL_VERTEX_SHADER); // or GL_FRAGMENT_SHADER
-    glShaderSource(shader, 1,
-        &(SRC.as_bytes().as_ptr().cast()),
-        &(SRC.len().try_into().unwrap()));
-    glCompileShader(shader);
-    let mut success = 0;
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &mut success);
-    if success == 0 {
-        let mut v: Vec<u8> = Vec::with_capacity(1024);
-        let mut log_len = 0_i32;
-        glGetShaderInfoLog(shader, 1024, &mut log_len, v.as_mut_ptr().cast());
-        v.set_len(log_len.try_into().unwrap());
-        panic!("Shader error: {}", String::from_utf8_lossy(&v));
-    }
-}
+let vao = VertexArray::new().expect("Couldn't make a VAO");
+vao.bind();
 ```
 
-**Draw call**
+**Buffer + BufferType** — wraps VBO/EBO
+```rust
+let vbo = Buffer::new().expect("Couldn't make VBO");
+vbo.bind(BufferType::Array);
+buffer_data(BufferType::Array, bytemuck::cast_slice(&VERTICES), GL_STATIC_DRAW);
+
+let ebo = Buffer::new().expect("Couldn't make EBO");
+ebo.bind(BufferType::ElementArray);
+buffer_data(BufferType::ElementArray, bytemuck::cast_slice(&INDICES), GL_STATIC_DRAW);
+```
+
+**ShaderProgram** — compiles vert+frag and links in one call
+```rust
+let shader_program = ShaderProgram::from_vert_frag(VERT_SHADER, FRAG_SHADER).unwrap();
+shader_program.use_program();
+```
+
+**PolygonMode** — fill/wireframe/points
+```rust
+polygon_mode(PolygonMode::Line); // wireframe
+polygon_mode(PolygonMode::Fill); // solid (default)
+```
+
+---
+
+## Uniforms
+
+```rust
+// Get location (use null-terminated byte string)
+let loc = unsafe { glGetUniformLocation(shader_program.0, b"my_uniform\0".as_ptr().cast()) };
+
+// Set per-frame before draw
+unsafe { glUniform2f(loc, x, y); }       // vec2
+unsafe { glUniform1f(loc, value); }       // float
+unsafe { glUniform3f(loc, r, g, b); }     // vec3
+unsafe { glUniform4f(loc, r, g, b, a); }  // vec4
+```
+
+Example — mouse position as NDC uniform:
+```rust
+// Screen to NDC conversion (SDL y-axis is flipped vs OpenGL)
+let ndc_x = (mouse_x / WIN_W) * 2.0 - 1.0;
+let ndc_y = 1.0 - (mouse_y / WIN_H) * 2.0;
+unsafe { glUniform2f(offset_loc, ndc_x, ndc_y); }
+```
+
+## Draw calls
+
 ```rust
 unsafe {
     glClear(GL_COLOR_BUFFER_BIT);
-    glDrawArrays(GL_TRIANGLES, 0, 3); // last arg = vertex count
+    glDrawArrays(GL_TRIANGLES, 0, 3);                              // vertex count
+    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0 as *const _); // index count
 }
 win.swap_window();
 ```
+
+---
 
 ## Common tasks
 
 When the user asks to:
 - **Add keyboard input** — match on `Event::Keyboard(key)` and use `key.keycode`
+- **Track mouse position** — match on `Event::MouseMotion(e)`, use `e.x_pos` / `e.y_pos`
+- **Pass data to shader** — use `glGetUniformLocation` + `glUniform*f`
+- **Convert screen to GL coords** — `ndc_x = (x/W)*2-1`, `ndc_y = 1-(y/H)*2`
+- **Draw indexed geometry** — use EBO + `glDrawElements`
+- **Wireframe mode** — `polygon_mode(PolygonMode::Line)`
 - **Add a render loop** — place GL draw calls + `win.swap_window()` at the bottom of the loop
-- **Change window size or title** — update args to `create_gl_window` or call `win.set_title("new title")`
-- **Load OpenGL functions** — use `ogl33`: `load_gl_with(|f| win.get_proc_address(f.cast()))`
-- **Add delta time** — use `sdl.get_ticks()` which returns milliseconds since init
-- **Set background color** — `glClearColor(r, g, b, a)` before the loop, all values 0.0–1.0
+- **Set background color** — `clear_color(r, g, b, 1.0)` before the loop (0.0–1.0)
+- **Add delta time** — `sdl.get_ticks()` returns milliseconds as u32 since init
 
 ## What to avoid
-- Do not use the old tutorial API (`Sdl::init`, `init::InitFlags::EVERYTHING`, `video::GlProfile`, etc.) — it is outdated and does not match beryllium 0.2.1
-- Do not create more than one window
+- Do NOT use the old tutorial API: `Sdl::init`, `init::InitFlags::EVERYTHING`, `video::GlProfile`, `video::CreateWinArgs`, `events::Event::Quit` (no inner value) — these are from a different beryllium version and will not compile
+- Do not create more than one window (beryllium 0.2.1 enforces this)
 - Always set GL attributes before calling `create_gl_window`
+- `win.set_swap_interval()` returns `i32`, not `Result` — do not call `.unwrap()` on it
 
 $ARGUMENTS
