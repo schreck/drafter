@@ -32,7 +32,6 @@ impl VertexArray {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BufferType {
     Array = GL_ARRAY_BUFFER as isize,
-    ElementArray = GL_ELEMENT_ARRAY_BUFFER as isize,
 }
 
 pub struct Buffer(pub GLuint);
@@ -91,15 +90,6 @@ impl Shader {
     }
 }
 
-pub enum PolygonMode {
-    Point = GL_POINT as isize,
-    Line = GL_LINE as isize,
-    Fill = GL_FILL as isize,
-}
-
-pub fn polygon_mode(mode: PolygonMode) {
-    unsafe { glPolygonMode(GL_FRONT_AND_BACK, mode as GLenum) };
-}
 
 pub struct ShaderProgram(pub GLuint);
 impl ShaderProgram {

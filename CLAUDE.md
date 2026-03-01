@@ -27,7 +27,7 @@ src/
   io1-ug-214.stp   — single-part sample (Unigraphics export)
 ```
 
-The active file is set by `STEP_FILE` in `main.rs`.
+The input file is passed as the first CLI argument: `cargo run -- path/to/file.stp`.
 
 ## STEP parser (`step_parser.rs`)
 
@@ -66,9 +66,8 @@ just calls `glDrawArrays(GL_LINES, ...)` with no uniforms.
 ### gl_utils.rs exports
 
 - `VertexArray` — VAO wrapper
-- `Buffer` + `BufferType` — VBO/EBO wrapper (`Array`, `ElementArray`)
+- `Buffer` + `BufferType` — VBO wrapper (`Array` variant only)
 - `ShaderProgram::from_vert_frag(vert, frag)` — compiles and links shaders
-- `PolygonMode` + `polygon_mode(mode)` — fill/line/point rendering
 - `clear_color(r, g, b, a)` — sets glClearColor
 - `buffer_data(ty, &[u8], usage)` — uploads data; use `bytemuck::cast_slice` to convert vertex arrays
 
@@ -107,7 +106,7 @@ let ndc_y = 1.0 - (mouse_y / WIN_H) * 2.0;
 ## Running
 
 ```sh
-cargo run
+cargo run -- path/to/file.stp
 cargo test
 ```
 
