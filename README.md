@@ -1,6 +1,6 @@
 # Drafter
 
-A Rust application with an SDL2/OpenGL window.
+A STEP file viewer written in Rust. Parses AP214 `.stp` files, tessellates B-rep edge geometry, and displays a wireframe front elevation in an SDL2/OpenGL 3.3 window.
 
 ## Dependencies
 
