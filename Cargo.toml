@@ -5,4 +5,5 @@ edition = "2024"
 
 [dependencies]
 beryllium = "0.2.1"
+bytemuck = "1"
 ogl33 = "0.2.0"
